@@ -1,5 +1,6 @@
 import re
 import time
+import logging
 import requests
 import pandas as pd
 from serpapi import GoogleSearch
@@ -77,7 +78,7 @@ def make_serpapi_request(query, num_results=10):
     return search.get_dict()
 
 # In the process_search_results function:
-def process_search_results(items):
+# def process_search_results(items):
     processed_results = []
     for item in items:
         api_title = item.get('title', '').strip()
@@ -102,6 +103,34 @@ def process_search_results(items):
         time.sleep(1)  # Add a 1-second delay between requests
     return processed_results
 
+def process_search_results(items):
+    processed_results = []
+    for item in items:
+        api_title = item.get('title', '').strip()
+        link = item.get('link', '')
+        
+        full_title = get_full_title(link)
+        title = full_title if full_title else api_title
+        
+        content = extract_article_content(link)
+        if content.startswith("Error:") or content.startswith("Access to this page has been denied"):
+            summary = f"We couldn't access the full content of this article due to the following issue:\n{content}\n\nHowever, here's what we know about it:\n\nTitle: {title}\n\nYou can try accessing the article directly at: {link}"
+        else:
+            try:
+                summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
+                if not summary:
+                    summary = f"We couldn't summarize this article, but here's a brief excerpt:\n\n{content[:200]}...\n\nYou can read the full article at: {link}"
+            except Exception as e:
+                summary = f"An error occurred while summarizing this article: {str(e)}\n\nHowever, here's what we know about it:\n\nTitle: {title}\n\nYou can try reading the full article at: {link}"
+        
+        processed_results.append({
+            'Title': title,
+            'Summary': summary,
+            'Source': link
+        })
+        time.sleep(1)  # Add a 1-second delay between requests
+    return processed_results
+
 def perform_search(query, result_total=10, use_serpapi=False, extra_results=5):
     total_to_fetch = result_total + extra_results
     try:
@@ -120,43 +149,96 @@ def perform_search(query, result_total=10, use_serpapi=False, extra_results=5):
                     payload = build_google_payload(query, start=i*10 + 1)
                 response = make_google_request(payload)
                 if response is None:
-                    print("Failed to get response from Google Search API")
+                    logging.error("Failed to get response from Google Search API")
                     continue
                 items.extend(response.get('items', []))
         
+        logging.info(f"Raw search results: {items}")  # Log raw results
+        
         if not items:
-            print("No search results found")
+            logging.warning("No search results found")
             return []
 
-        processed_results = process_search_results(items)
-        
-        query_string_clean = clean_filename(query)
-        timestamp = time.strftime('%Y%m%d-%H%M%S')
-        df = pd.DataFrame(processed_results)
-        
-        # Create a Pandas Excel writer using XlsxWriter as the engine
-        with pd.ExcelWriter(f"Search_Result_{query_string_clean}_{timestamp}.xlsx", engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sheet1')
-            
-            # Get the xlsxwriter workbook and worksheet objects
-            workbook = writer.book
-            worksheet = writer.sheets['Sheet1']
-            
-            # Set the column width for the Title column (adjust the width as needed)
-            worksheet.set_column('A:A', 50)  # Set width of column A (Title) to 50
-            
-            # Set the column width for the Summary column
-            worksheet.set_column('B:B', 100)  # Set width of column B (Summary) to 100
-            
-            # Set the column width for the Source column
-            worksheet.set_column('C:C', 50)  # Set width of column C (Source) to 50
-
-        return processed_results
+        return items  # Return raw items instead of processed results
     except Exception as e:
-        print(f"Error in perform_search: {str(e)}")
+        logging.error(f"Error in perform_search: {str(e)}", exc_info=True)
         return []
 
 def process_and_replace_results(items, query, result_total, use_serpapi):
+    processed_results = []
+    error_count = 0
+    extra_items_index = result_total
+    
+    for item in items[:result_total]:
+        try:
+            api_title = item.get('title', '').strip()
+            link = item.get('link', '')
+            
+            if not link:
+                logging.warning(f"Empty URL found for item: {item}")
+                raise ValueError("Empty URL")
+            
+            full_title = get_full_title(link) or api_title
+            
+            content = extract_article_content(link)
+            if not content or content.startswith("Error:"):
+                raise ValueError(f"Unable to extract content: {content}")
+            
+            summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
+            if not summary:
+                raise ValueError("Unable to summarize content")
+            
+            processed_results.append({
+                'Title': full_title,
+                'Summary': summary,
+                'Source': link
+            })
+        except Exception as e:
+            logging.error(f"Error processing {link}: {str(e)}")
+            error_count += 1
+            
+            # Try to replace with an extra result
+            while extra_items_index < len(items):
+                replacement_item = items[extra_items_index]
+                extra_items_index += 1
+                try:
+                    api_title = replacement_item.get('title', '').strip()
+                    link = replacement_item.get('link', '')
+                    
+                    if not link:
+                        logging.warning(f"Empty URL found for replacement item: {replacement_item}")
+                        continue
+                    
+                    full_title = get_full_title(link) or api_title
+                    
+                    content = extract_article_content(link)
+                    if not content or content.startswith("Error:"):
+                        continue
+                    
+                    summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
+                    if not summary:
+                        continue
+                    
+                    processed_results.append({
+                        'Title': full_title,
+                        'Summary': summary,
+                        'Source': link
+                    })
+                    break
+                except Exception as e:
+                    logging.error(f"Error processing replacement {link}: {str(e)}")
+            else:
+                logging.warning("No more replacement results available")
+        
+        if len(processed_results) == result_total:
+            break
+        
+        time.sleep(1) # 1 second delay between requests
+    
+    logging.info(f"Processed {len(processed_results)} results with {error_count} errors")
+    return processed_results
+
+# def process_and_replace_results(items, query, result_total, use_serpapi):
     processed_results = []
     error_count = 0
     extra_items_index = result_total
@@ -170,10 +252,10 @@ def process_and_replace_results(items, query, result_total, use_serpapi):
             title = full_title if full_title else api_title
             
             content = extract_article_content(link)
-            if not content:
-                raise Exception("Unable to extract content")
+            if content.startswith("Error:") or content.startswith("Access to this page has been denied"):
+                raise Exception(content)
             
-            summary = summarize_text(content, max_token=150, max_chunk_tokens=3000)
+            summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
             if not summary:
                 raise Exception("Unable to summarize content")
             
@@ -199,8 +281,8 @@ def process_and_replace_results(items, query, result_total, use_serpapi):
                     title = full_title if full_title else api_title
                     
                     content = extract_article_content(link)
-                    if not content:
-                        raise Exception("Unable to extract content")
+                    if content.startswith("Error:") or content.startswith("Access to this page has been denied"):
+                        raise Exception(content)
                     
                     summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
                     if not summary:
@@ -217,7 +299,7 @@ def process_and_replace_results(items, query, result_total, use_serpapi):
             else:
                 print("No more replacement results available")
         
-        time.sleep(1) # 1 seconds delay between request
+        time.sleep(1) # 1 second delay between requests
         
     # In case still don't have enough results, perform another search
     while len(processed_results) < result_total:

@@ -1,72 +1,52 @@
-import imaplib
-import email
-from email.header import decode_header
-import re
+from imap_tools import MailBox, AND
 import logging
+import re
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
-
-def decode_subject(subject):
-    decoded_subject, encoding = decode_header(subject)[0]
-    if isinstance(decoded_subject, bytes):
-        return decoded_subject.decode(encoding or 'utf-8')
-    return decoded_subject
-
 def check_for_updates(imap_server, imap_user, imap_pass, folder='INBOX'):
-    logging.debug("Checking for update emails...")
+    logging.debug(f"Checking for update emails in folder: {folder}")
     try:
-        mail = imaplib.IMAP4_SSL(imap_server)
-        mail.login(imap_user, imap_pass)
-        mail.select('folder')
+        with MailBox(imap_server).login(imap_user, imap_pass, folder) as mailbox:
+            logging.debug("Successfully logged into mailbox")
+            logging.debug("Searching for emails with subject 'Update News Preferences'")
+            messages = mailbox.fetch(AND(subject='Update News Preferences', seen=False), limit=1)
+            messages_list = list(messages)
+            logging.debug(f"Found {len(messages_list)} matching messages")
 
-        logging.debug("Searching for emails with subject 'Update News Preferences'")
-        _, message_numbers = mail.search(None, '(UNSEEN SUBJECT "Update News Preferences")')
-        
-        if not message_numbers[0]:
-            logging.debug("No new update emails found.")
-            mail.close()
-            mail.logout()
-            return None, None
-
-        for num in message_numbers[0].split():
-            logging.debug(f"Processing email number: {num}")
-            _, msg_data = mail.fetch(num, '(RFC822)')
-            for response_part in msg_data:
-                if isinstance(response_part, tuple):
-                    email_body = response_part[1]
-                    email_message = email.message_from_bytes(email_body)
-                    
-                    if email_message.is_multipart():
-                        for part in email_message.walk():
-                            if part.get_content_type() == "text/plain":
-                                body = part.get_payload(decode=True).decode()
-                    else:
-                        body = email_message.get_payload(decode=True).decode()
-                    
-                    logging.debug(f"Email body: {body}")
-                    
-                    lines = body.strip().split('\n')
-                    new_query = None
-                    new_subject = None
-                    for line in lines:
-                        if line.startswith("New Query:"):
-                            new_query = line.replace("New Query:", "").strip()
-                            logging.debug(f"New query found: {new_query}")
-                        elif line.startswith("New Subject:"):
-                            new_subject = line.replace("New Subject:", "").strip()
-                            logging.debug(f"New subject found: {new_subject}")
-                    
-                    mail.store(num, '+FLAGS', '\\Seen')
+            for msg in messages_list:
+                logging.debug(f"Processing email: {msg.subject}")
+                
+                body = msg.text or msg.html
+                logging.debug(f"Email body: {body}")
+                
+                new_query, new_subject = parse_email_body(body)
+                
+                if new_query or new_subject:
+                    # Mark the email as seen
+                    mailbox.flag(msg.uid, '\Seen', True)
                     logging.debug("Email marked as read")
-                    
-                    mail.close()
-                    mail.logout()
                     return new_query, new_subject
 
     except Exception as e:
-        logging.error(f"Error in check_for_updates: {str(e)}")
+        logging.error(f"Error checking for updates: {str(e)}")
     
     logging.debug("No valid update email found")
     return None, None
 
+def parse_email_body(body):
+    new_query = None
+    new_subject = None
+    
+    # Use regular expressions to find the new query and subject
+    query_match = re.search(r'New Query:\s*(.+)', body, re.IGNORECASE | re.MULTILINE)
+    subject_match = re.search(r'New Subject:\s*(.+)', body, re.IGNORECASE | re.MULTILINE)
+    
+    if query_match:
+        new_query = query_match.group(1).strip()
+        logging.debug(f"New query found: {new_query}")
+    
+    if subject_match:
+        new_subject = subject_match.group(1).strip()
+        logging.debug(f"New subject found: {new_subject}")
+    
