@@ -14,15 +14,16 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def update_search_job(imap_server, imap_user, imap_pass, folder='INBOX'):
+    global search_query, email_subject
     logging.info("Running update_search_job")
     try:
         new_query, new_subject = check_for_updates(imap_server, imap_user, imap_pass, folder)
-        if new_query or new_subject:
-            global search_query, email_subject
-            if new_query:
+        logging.info(f"Received new_query: {new_query}, new_subject: {new_subject}")
+        if new_query is not None or new_subject is not None:
+            if new_query is not None:
                 search_query = new_query
                 logging.info(f"Search query updated to: {search_query}")
-            if new_subject:
+            if new_subject is not None:
                 email_subject = new_subject
                 logging.info(f"Email subject updated to: {email_subject}")
             
@@ -32,10 +33,13 @@ def update_search_job(imap_server, imap_user, imap_pass, folder='INBOX'):
             schedule.clear('search_job')
             schedule.every(search_interval).minutes.do(search_job).tag('search_job')
             logging.info("Search job rescheduled with new parameters")
+            
+            # Trigger an immediate search with the new query
+            search_job()
         else:
             logging.info("No updates found")
     except Exception as e:
-        logging.error(f"Error in update_search_job: {str(e)}")
+        logging.error(f"Error in update_search_job: {str(e)}", exc_info=True)
 
 def search_job():
     logging.info(f"Performing search for '{search_query}' at {time.strftime('%Y-%m-%d %H:%M:%S')}")
