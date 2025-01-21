@@ -18,6 +18,10 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 client = OpenAI(api_key="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")
 
 # def get_full_title(url, max_retries=3, backoff_factor=0.3):
+#     if not url:
+#         logging.error("Empty URL provided to get_full_title")
+#         return None
+
 #     ssl_context = ssl.create_default_context()
 #     ssl_context.check_hostname = False
 #     ssl_context.verify_mode = ssl.CERT_NONE
@@ -36,9 +40,9 @@ client = OpenAI(api_key="sk-proj-65WLIaVIRsFYYoYzIo58ubkIAA72iKN97iIELK3N6oUxVxJ
 #             if title:
 #                 return title.string.strip()
 #         except RequestException as e:
-#             print(f"Error fetching full title from {url}: {str(e)}")
+#             logging.error(f"Error fetching full title from {url}: {str(e)}")
 #         except Exception as e:
-#             print(f"Unexpected error fetching title from {url}: {str(e)}")
+#             logging.error(f"Unexpected error fetching title from {url}: {str(e)}")
         
 #         if attempt < max_retries - 1:
 #             time.sleep(backoff_factor * (2 ** attempt))
@@ -61,7 +65,7 @@ def get_full_title(url, max_retries=3, backoff_factor=0.3):
     
     for attempt in range(max_retries):
         try:
-            response = scraper.get(url, timeout=15)
+            response = scraper.get(url, timeout=15, verify=False)  # Disable SSL verification
             response.raise_for_status()
             soup = BeautifulSoup(response.content, 'html.parser')
             title = soup.find('title')
@@ -96,13 +100,73 @@ def request_retry_session(
     session.mount('https://', adapter)
     return session
 
+# def extract_article_content(url, max_retries=3, backoff_factor=0.3):
+#     # Create a custom SSL context
+#     ssl_context = ssl.create_default_context()
+#     ssl_context.check_hostname = False
+#     ssl_context.verify_mode = ssl.CERT_NONE
+
+#     # Create a scraper with the custom SSL context
+#     scraper = cloudscraper.create_scraper(
+#         browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False},
+#         ssl_context=ssl_context
+#     )
+    
+#     for attempt in range(max_retries):
+#         try:
+#             response = scraper.get(url, timeout=15)
+            
+#             if response.status_code == 403:
+#                 return f"Error: Access forbidden (403) for {url}. The website may be blocking automated access."
+            
+#             response.raise_for_status()
+            
+#             soup = BeautifulSoup(response.content, 'html.parser')
+            
+#             # Remove script and style elements
+#             for script in soup(["script", "style"]):
+#                 script.decompose()
+            
+#             # Get text
+#             text = soup.get_text()
+            
+#             # Break into lines and remove leading and trailing space on each
+#             lines = (line.strip() for line in text.splitlines())
+#             # Break multi-headlines into a line each
+#             chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
+#             # Drop blank lines
+#             text = '\n'.join(chunk for chunk in chunks if chunk)
+            
+#             if not text:
+#                 return f"Error: No text could be extracted from {url}. The page might be empty or use a format we can't process."
+            
+#             return text
+        
+#         except requests.exceptions.Timeout:
+#             if attempt == max_retries - 1:
+#                 return f"Error: Request timed out for {url}. The website might be slow or unresponsive."
+        
+#         except RequestException as e:
+#             if "Cloudflare" in str(e):
+#                 return f"Error: Cloudflare protection detected for {url}. We couldn't bypass their security measures."
+#             elif "PerimeterX" in str(e):
+#                 return f"Error: PerimeterX protection detected for {url}. We couldn't bypass their security measures."
+#             else:
+#                 return f"Error: Unable to fetch content from {url}. Reason: {str(e)}"
+        
+#         except Exception as e:
+#             return f"Error: Unexpected issue processing {url}. Reason: {str(e)}"
+        
+#         if attempt < max_retries - 1:
+#             time.sleep(backoff_factor * (2 ** attempt))
+    
+#     return f"Error: Maximum retries reached for {url}. We couldn't access the content after several attempts."
+
 def extract_article_content(url, max_retries=3, backoff_factor=0.3):
-    # Create a custom SSL context
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
 
-    # Create a scraper with the custom SSL context
     scraper = cloudscraper.create_scraper(
         browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False},
         ssl_context=ssl_context
@@ -110,7 +174,7 @@ def extract_article_content(url, max_retries=3, backoff_factor=0.3):
     
     for attempt in range(max_retries):
         try:
-            response = scraper.get(url, timeout=15)
+            response = scraper.get(url, timeout=15, verify=False)  # Disable SSL verification
             
             if response.status_code == 403:
                 return f"Error: Access forbidden (403) for {url}. The website may be blocking automated access."

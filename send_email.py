@@ -84,33 +84,30 @@ def format_results_as_html(results):
 #     print(f"Email sent to {to_email}")
  
     
-def manage_and_send_results(results, to_email, from_email, password, subject):
-    logging.info(f"Managing and sending results to {to_email}")
+def manage_and_send_results(results, user, from_email, password, subject):
+    logging.info(f"Managing and sending results to {user.email}")
     if not results:
-        logging.warning("No results to send.")
+        logging.warning(f"No results to send to {user.email}.")
         return
     
+    body = format_results_as_html(results)
+    # Create Excel file in memory (as before)
+    output = io.BytesIO()
+    df = pd.DataFrame(results)
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
+        workbook = writer.book
+        worksheet = writer.sheets['Sheet1']
+        worksheet.set_column('A:A', 50)
+        worksheet.set_column('B:B', 100)
+        worksheet.set_column('C:C', 50)
+    output.seek(0)
     try:
-        body = format_results_as_html(results)
-        logging.info("HTML body formatted successfully.")
-        
-        # Create Excel file in memory
-        output = io.BytesIO()
-        df = pd.DataFrame(results)
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df.to_excel(writer, index=False, sheet_name='Sheet1')
-            workbook = writer.book
-            worksheet = writer.sheets['Sheet1']
-            worksheet.set_column('A:A', 50)
-            worksheet.set_column('B:B', 100)
-            worksheet.set_column('C:C', 50)
-        output.seek(0)
-        logging.info("Excel file created in memory successfully.")
-        
-        send_email(subject, body, to_email, from_email, password, output)
-        logging.info(f"Email sent successfully to {to_email}")
+        send_email(subject, body, user.email, from_email, password, output)
+        user.update_last_news_sent()  # Update the timestamp
+        logging.info(f"Email sent successfully to {user.email}")
     except Exception as e:
-        logging.error(f"Error in manage_and_send_results: {str(e)}", exc_info=True)
+        logging.error(f"Error sending email to {user.email}: {str(e)}")
     
 def send_confirmation_email(to_email, new_query, new_subject, from_email, email_password):
     subject = "News Preferences Updated"
