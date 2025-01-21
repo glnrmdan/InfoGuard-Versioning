@@ -80,7 +80,7 @@ if __name__ == "__main__":
     SEARCH_ENGINE_ID = "70ff0242dca66436a"
     SERPAPI_KEY = "b397516f95f8e092c677d0b9e12d11a714a2849911a81d1197056366c1ead3cb"
     
-    # search_query = 'How to growth the selling'  # Initial search query
+    search_query = 'How to growth the selling'  # Initial search query
     email_subject = "Search Results Update"  # Initial email subject
     total_result = 8
     search_interval = 2  # Check every 1 minute
