@@ -77,32 +77,6 @@ def make_serpapi_request(query, num_results=10):
     search = GoogleSearch(params)
     return search.get_dict()
 
-# In the process_search_results function:
-# def process_search_results(items):
-    processed_results = []
-    for item in items:
-        api_title = item.get('title', '').strip()
-        link = item.get('link', '')
-        
-        # Try to get the full title from the webpage
-        full_title = get_full_title(link)
-        
-        # Use the full title if available, otherwise use the API-provided title
-        title = full_title if full_title else api_title
-        
-        content = extract_article_content(link)
-        if not content:
-            content = "Unable to extract content from this page."
-        
-        summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
-        processed_results.append({
-            'Title': title,
-            'Summary': summary if summary else "Unable to summarize content.",
-            'Source': link
-        })
-        time.sleep(1)  # Add a 1-second delay between requests
-    return processed_results
-
 def process_search_results(items):
     processed_results = []
     for item in items:
