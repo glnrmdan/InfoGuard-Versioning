@@ -13,4 +13,3 @@ InfoGuard is an automated news monitoring and delivery system that helps users s
 - **Robust Error Handling**: Comprehensive error management and retry mechanisms
 - **Anti-Bot Protection Bypass**: Handles various website protection mechanisms
 - **Configurable Search Sources**: Supports both Google Custom Search API and SerpAPI
-## Project Structure
