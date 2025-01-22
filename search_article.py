@@ -5,19 +5,32 @@ import requests
 import pandas as pd
 from serpapi import GoogleSearch
 from article_extraction import extract_article_content, summarize_text, get_full_title
+from loader import load_all_configs, validate_configs
 
-# Just for developing only the API key is here
-API_KEY = "AIzaSyCwWlf7Ka_BHc9fNElQtFoKRJUlDaV7O_o"
-SEARCH_ENGINE_ID = "70ff0242dca66436a"
-SERPAPI_KEY = "b397516f95f8e092c677d0b9e12d11a714a2849911a81d1197056366c1ead3cb"
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
 
+try:
+    configs = load_all_configs()
+    validate_configs(configs)
+    
+    # Use the configurations
+    API_KEY = configs['google_api_key']
+    SEARCH_ENGINE_ID = configs['search_engine_id']
+    SERPAPI_KEY = configs['serpapi_key']
+
+except Exception as e:
+    logging.error(f"Failed to load configurations: {str(e)}")
+    raise
 def clean_filename(filename):
     """
-    Function to clean up string to be used as a filename.
+    Sanitizes a string to be used as a safe filename.
     
-    :param filename: The original string to be cleaned up
+    Args:
+        filename (str): Original filename string
     
-    :return: Cleaned up string safe to use as a filename
+    Returns:
+        str: Sanitized filename with special characters removed
     """
     filename = re.sub(r'[\\/*?:"<>|]', "", filename)
     return filename
@@ -25,16 +38,17 @@ def clean_filename(filename):
 # date_restrict as time configuration
 def build_google_payload(query, start=1, num=10, date_restrict='w1', **params):
     """
-    Function to build the payload for the Google Search API request.
+    Constructs the payload for Google Custom Search API requests.
     
-    :param query: The search term (query)
-    :param start: The index of the first result to return
-    :param link_site: Specifies that all search results should contain a link to a particular URL
-    :param search_type: Type of search (default is undefined, 'IMAGE' for image search)
-    :param date_restrict: Restricts results based on recency (on 1 week)
-    :param params: Additional parameters to be included in the request
+    Args:
+        query (str): Search query string
+        start (int): Starting index for search results (1-based)
+        num (int): Number of results to return (max 10)
+        date_restrict (str): Time restriction for results (e.g., 'w1' for past week)
+        **params: Additional API parameters
     
-    :return: Dictionary containing the API request parameters
+    Returns:
+        dict: Complete API request parameters
     """
     payload = {
         'key': API_KEY,
@@ -50,10 +64,17 @@ def build_google_payload(query, start=1, num=10, date_restrict='w1', **params):
 
 def make_google_request(payload):
     """
-    Function to send a GET request to the Google Search API and handle potential errors.
+    Executes a Google Custom Search API request.
     
-    :param payload: Dictionary containing the API request parameters
-    :return: JSON response from the API
+    Args:
+        payload (dict): API request parameters
+    
+    Returns:
+        dict: JSON response from API or None if error occurs
+    
+    Raises:
+        requests.exceptions.HTTPError: For HTTP errors
+        Exception: For other errors
     """
     try:
         response = requests.get('https://www.googleapis.com/customsearch/v1', params=payload)
@@ -67,6 +88,20 @@ def make_google_request(payload):
     return None
 
 def make_serpapi_request(query, num_results=10):
+    """
+    Executes a SerpAPI search request.
+    
+    Args:
+        query (str): Search query string
+        num_results (int): Number of results to return
+    
+    Returns:
+        dict: Search results from SerpAPI
+    
+    Note:
+        Uses global SERPAPI_KEY constant
+        Specifically searches news results
+    """
     params = {
         "api_key": SERPAPI_KEY,
         "engine": "google",
@@ -78,6 +113,20 @@ def make_serpapi_request(query, num_results=10):
     return search.get_dict()
 
 def process_search_results(items):
+    """
+    Processes raw search results into structured format with summaries.
+    
+    Args:
+        items (list): List of raw search result items
+    
+    Returns:
+        list: Processed results with titles, summaries, and sources
+    
+    Note:
+        - Includes error handling for inaccessible articles
+        - Adds 1-second delay between requests
+        - Attempts to get full article content and summarize it
+    """
     processed_results = []
     for item in items:
         api_title = item.get('title', '').strip()
@@ -106,6 +155,22 @@ def process_search_results(items):
     return processed_results
 
 def perform_search(query, result_total=10, use_serpapi=False, extra_results=5):
+    """
+    Performs search operation using either Google API or SerpAPI.
+    
+    Args:
+        query (str): Search query string
+        result_total (int): Number of results desired
+        use_serpapi (bool): Whether to use SerpAPI instead of Google API
+        extra_results (int): Additional results to fetch for backup
+    
+    Returns:
+        list: Raw search results
+    
+    Note:
+        - Handles pagination for Google API
+        - Includes error handling and logging
+    """
     total_to_fetch = result_total + extra_results
     try:
         if use_serpapi:
@@ -139,6 +204,24 @@ def perform_search(query, result_total=10, use_serpapi=False, extra_results=5):
         return []
 
 def process_and_replace_results(items, query, result_total, use_serpapi):
+    """
+    Processes search results and handles failed items with replacements.
+    
+    Args:
+        items (list): Raw search result items
+        query (str): Original search query
+        result_total (int): Desired number of results
+        use_serpapi (bool): Whether SerpAPI was used
+    
+    Returns:
+        list: Processed results with replacements for failed items
+    
+    Note:
+        - Includes error handling for each processing step
+        - Attempts to replace failed items with extra results
+        - Adds 1-second delay between requests
+        - Logs processing statistics
+    """
     processed_results = []
     error_count = 0
     extra_items_index = result_total
@@ -156,7 +239,11 @@ def process_and_replace_results(items, query, result_total, use_serpapi):
             
             content = extract_article_content(link)
             if not content or content.startswith("Error:"):
-                raise ValueError(f"Unable to extract content: {content}")
+                if "Access blocked by Indonesian ISP" in content:
+                    logging.warning(f"Access blocked by Indonesian ISP for {link}")
+                    raise ValueError("Access blocked by Indonesian ISP")
+                else:
+                    raise ValueError(f"Unable to extract content: {content}")
             
             summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
             if not summary:
@@ -210,102 +297,4 @@ def process_and_replace_results(items, query, result_total, use_serpapi):
         time.sleep(1) # 1 second delay between requests
     
     logging.info(f"Processed {len(processed_results)} results with {error_count} errors")
-    return processed_results
-
-# def process_and_replace_results(items, query, result_total, use_serpapi):
-    processed_results = []
-    error_count = 0
-    extra_items_index = result_total
-    
-    for item in items[:result_total]:
-        try:
-            api_title = item.get('title', '').strip()
-            link = item.get('link', '')
-            
-            full_title = get_full_title(link)
-            title = full_title if full_title else api_title
-            
-            content = extract_article_content(link)
-            if content.startswith("Error:") or content.startswith("Access to this page has been denied"):
-                raise Exception(content)
-            
-            summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
-            if not summary:
-                raise Exception("Unable to summarize content")
-            
-            processed_results.append({
-                'Title': title,
-                'Summary': summary,
-                'Source': link
-            })
-        except Exception as e:
-            print(f"Error processing {link}: {str(e)}")
-            error_count += 1
-            
-            # Try to replace with an extra result
-            if extra_items_index < len(items):
-                print(f"Replacing with next available result")
-                replacement_item = items[extra_items_index]
-                extra_items_index += 1
-                try:
-                    api_title = replacement_item.get('title', '').strip()
-                    link = replacement_item.get('link', '')
-                    
-                    full_title = get_full_title(link)
-                    title = full_title if full_title else api_title
-                    
-                    content = extract_article_content(link)
-                    if content.startswith("Error:") or content.startswith("Access to this page has been denied"):
-                        raise Exception(content)
-                    
-                    summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
-                    if not summary:
-                        raise Exception("Unable to summarize content")
-                    
-                    processed_results.append({
-                        'Title': title,
-                        'Summary': summary,
-                        'Source': link
-                    })
-                except Exception as e:
-                    print(f"Error processing replacement {link}: {str(e)}")
-                    error_count += 1
-            else:
-                print("No more replacement results available")
-        
-        time.sleep(1) # 1 second delay between requests
-        
-    # In case still don't have enough results, perform another search
-    while len(processed_results) < result_total:
-        print(f"Not enough results, performing additional search")
-        additional_items = perform_search(query, result_total - len(processed_results), use_serpapi)
-        for item in additional_items:
-            try:
-                api_title = item.get('title', '').strip()
-                link = item.get('link', '')
-                
-                full_title = get_full_title(link)
-                title = full_title if full_title else api_title
-                
-                content = extract_article_content(link)
-                if not content:
-                    raise Exception("Unable to extract content")
-                
-                summary = summarize_text(content, max_tokens=150, max_chunk_tokens=3000)
-                if not summary:
-                    raise Exception("Unable to summarize content")
-                
-                processed_results.append({
-                    'Title': title,
-                    'Summary': summary,
-                    'Source': link
-                })
-                
-                if len(processed_results) == result_total:
-                    break
-            except Exception as e:
-                print(f"Error processing additional result {link}: {str(e)}")
-                
-            time.sleep(1)
-            
     return processed_results
