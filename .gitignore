@@ -1,0 +1,6 @@
+# API Keys and Configuration files
+**/openai_api_key.txt
+**/search_api_keys.txt
+
+# Python
+__pycache__/

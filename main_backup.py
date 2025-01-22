@@ -9,36 +9,6 @@ from email_parser import check_for_updates
 from send_email import manage_and_send_results, send_confirmation_email
 from user import User
 
-# Configuration
-"""
-Service Configuration Parameters
-
-Email Settings:
-    FROM_EMAIL: Sender email address
-    EMAIL_PASSWORD: Application-specific password for email
-    
-IMAP Settings:
-    IMAP_SERVER: IMAP server address
-    IMAP_FOLDER: Folder to monitor for updates
-    IMAP_USER: IMAP username
-    IMAP_PASS: IMAP password
-
-Search Settings:
-    TOTAL_RESULT: Number of results to fetch per search
-    USE_SERPAPI: Boolean flag for using SerpAPI
-"""
-TOTAL_RESULT = 4
-USE_SERPAPI = True
-
-FROM_EMAIL = "testmail1122222@gmail.com"
-EMAIL_PASSWORD = "xuouvmsncyasmxqa" 
-
-# IMAP configuration for checking updates
-IMAP_SERVER = "imap.gmail.com"
-IMAP_FOLDER = 'INBOX'
-IMAP_USER = FROM_EMAIL
-IMAP_PASS = EMAIL_PASSWORD
-
 # Disable SSL verification warnings
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
@@ -52,21 +22,6 @@ users = [
 ]
 
 def update_search_job(imap_server, imap_user, imap_pass, folder='INBOX'):
-    """
-    Checks and updates user search preferences by monitoring email inbox.
-    
-    Args:
-        imap_server (str): IMAP server address
-        imap_user (str): IMAP username/email
-        imap_pass (str): IMAP password
-        folder (str, optional): Email folder to monitor. Defaults to 'INBOX'
-    
-    Returns:
-        None
-    
-    Raises:
-        Exception: If there's an error during the email checking process
-    """
     logging.info("Running update_search_job")
     try:
         new_query, new_subject, user_email = check_for_updates(imap_server, imap_user, imap_pass, folder, users)
@@ -83,7 +38,7 @@ def update_search_job(imap_server, imap_user, imap_pass, folder='INBOX'):
                 user.email_subject = new_subject
                 logging.info(f"Email subject updated for {user_email}: {user.email_subject}")
             
-            send_confirmation_email(user.email, new_query, new_subject, FROM_EMAIL, EMAIL_PASSWORD)
+            send_confirmation_email(user.email, new_query, new_subject, from_email, email_password)
             
             # Reset the next search time to now, so the new query will be used in the next search
             user.set_next_search_time(datetime.now(timezone.utc))
@@ -93,18 +48,6 @@ def update_search_job(imap_server, imap_user, imap_pass, folder='INBOX'):
         logging.error(f"Error in update_search_job: {str(e)}", exc_info=True)
 
 def search_job():
-    """
-    Executes scheduled searches for all users based on their search intervals.
-    
-    Iterates through all users and performs searches if they're due according
-    to their individual schedules. Updates next search time after completion.
-    
-    Returns:
-        None
-    
-    Raises:
-        Exception: If there's an error during the search process for any user
-    """
     current_time = datetime.now(timezone.utc)
     for user in users:
         try:
@@ -115,33 +58,16 @@ def search_job():
             logging.error(f"Error in search_job for user {user.email}: {str(e)}", exc_info=True)
 
 def perform_search_for_user(user):
-    """
-    Executes a search operation for a specific user and sends results via email.
-    
-    Args:
-        user (User): User object containing search preferences and email information
-    
-    Returns:
-        None
-    
-    Raises:
-        Exception: If there's an error during search, processing, or email sending
-    
-    Note:
-        - Performs search based on user's search query
-        - Processes and filters results
-        - Sends email if valid results are found
-    """
     logging.info(f"Performing search for user {user.email} with query '{user.search_query}' at {datetime.now(timezone.utc)}")
     try:
-        results = perform_search(user.search_query, TOTAL_RESULT, USE_SERPAPI)
+        results = perform_search(user.search_query, total_result, use_serpapi)
         logging.info(f"Search completed for {user.email}. Found {len(results)} results.")
         if results:
-            processed_results = process_and_replace_results(results, user.search_query, TOTAL_RESULT, USE_SERPAPI)
+            processed_results = process_and_replace_results(results, user.search_query, total_result, use_serpapi)
             logging.info(f"Processed results for {user.email}. {len(processed_results)} valid results after processing.")
             if processed_results:
                 logging.info(f"Attempting to send email to {user.email} with {len(processed_results)} processed results")
-                manage_and_send_results(processed_results, user, FROM_EMAIL, EMAIL_PASSWORD, user.email_subject)
+                manage_and_send_results(processed_results, user, from_email, email_password, user.email_subject)
                 user.update_last_news_sent()
             else:
                 logging.warning(f"No valid results to send after processing for {user.email}.")
@@ -149,30 +75,50 @@ def perform_search_for_user(user):
             logging.warning(f"No results found in initial search for {user.email}.")
     except Exception as e:
         logging.error(f"Error in perform_search_for_user for {user.email}: {str(e)}", exc_info=True)
-        
-def main():
-    """
-    Main function that initializes and runs the news update service.
+
+
+
+if __name__ == "__main__":
+    # API configuration
+    API_KEY = "AIzaSyCwWlf7Ka_BHc9fNElQtFoKRJUlDaV7O_o"
+    SEARCH_ENGINE_ID = "70ff0242dca66436a"
+    SERPAPI_KEY = "b397516f95f8e092c677d0b9e12d11a714a2849911a81d1197056366c1ead3cb"
     
-    Responsibilities:
-        - Initializes logging
-        - Schedules periodic jobs for search and preference updates
-        - Performs initial search for all users
-        - Maintains continuous operation with error handling
+    # search_query = 'How to growth the selling'  # Initial search query
+    # email_subject = "Search Results Update"  # Initial email subject
+    # search_interval = 1  # Check every 1 minute
+    total_result = 4
+    use_serpapi = True
+
+    from_email = "testmail1122222@gmail.com"
+    email_password = "xuouvmsncyasmxqa" 
+
+    # IMAP configuration for checking updates
+    imap_server = "imap.gmail.com"
+    imap_user = from_email
+    imap_pass = email_password
+    imap_folder = 'INBOX'
     
-    Returns:
-        None
+    # print("To update your news preferences, send an email to", from_email)
+    # print("Subject: Update News Preferences")
+    # print("Body:")
+    # print("New Query: Your desired search query")
+    # print("New Subject: Your desired email subject (optional)")
+
+    # logging.info(f"Initial search query: '{search_query}'")
+    # logging.info(f"Initial email subject: '{email_subject}'")
+    # logging.info(f"Scheduled search every {search_interval} minutes")
+
+    logging.info("Starting the news update service")
+    # schedule.every(search_interval).minutes.do(search_job).tag('search_job')
+    # Schedule the search job for all users to run every minute
+    schedule.every(1).minutes.do(search_job)
     
-    Raises:
-        KeyboardInterrupt: If user manually stops the program
-        Exception: For any other unexpected errors
-    """
+    # Schedule the update check job (check every 15 minutes)
+    schedule.every(1).minutes.do(update_search_job, imap_server, imap_user, imap_pass, imap_folder)
+
     logging.info("Starting the news update service")
     logging.info("Checking for preference updates every 1 minutes")
-    
-    # Schedule jobs to run every minute
-    schedule.every(1).minutes.do(search_job) # seach every minutes to looks any updates (This may need optimization later)
-    schedule.every(1).minutes.do(update_search_job, IMAP_SERVER, IMAP_USER, IMAP_PASS, IMAP_FOLDER) # check for update of user preferences 
     
     # Perform initial search for all users
     search_job()
@@ -182,10 +128,15 @@ def main():
             schedule.run_pending()
             time.sleep(1)
     except KeyboardInterrupt:
-        logging.info("Script interrupted by user. Exiting .... ")
+        logging.info("Script interrupted by user. Exiting...")
     except Exception as e:
-        logging.error(f"Error in main: {str(e)}", exc_info=True)
-        time.sleep(60) # Wait for 60 seconds before continuing
-        
-if __name__ == "__main__":
-    main()
+        logging.error(f"An unexpected error occurred: {str(e)}", exc_info=True)
+        # Continue running even if an unexpected error occurs
+        time.sleep(60)  # Wait for 60 seconds before continuing
+    
+    # test email send
+    # try:
+    #     send_email("Test Email", "<p>This is a test email.</p>", to_email, from_email, email_password)
+    #     logging.info("Test email sent successfully.")
+    # except Exception as e:
+    #     logging.error(f"Failed to send test email: {str(e)}", exc_info=True)
