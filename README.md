@@ -1,7 +1,3 @@
-# InfoGuard-Versioning
-
-InfoGuard is an automated news monitoring and delivery system that helps users stay updated with their topics of interest through personalized email updates.
-
 ## Features
 
 - **Customized News Monitoring**: Users can specify their topics of interest and receive relevant updates
