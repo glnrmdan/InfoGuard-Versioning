@@ -76,8 +76,6 @@ def perform_search_for_user(user):
     except Exception as e:
         logging.error(f"Error in perform_search_for_user for {user.email}: {str(e)}", exc_info=True)
 
-
-
 if __name__ == "__main__":
     # API configuration
     API_KEY = "AIzaSyCwWlf7Ka_BHc9fNElQtFoKRJUlDaV7O_o"
